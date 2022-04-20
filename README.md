@@ -78,3 +78,6 @@ Where `<file.txt>` is the input file and `<species>` is a value from 1-5 dependi
 - The melodic line and skip rules
 - Crossed Voices
 - Exceptions (ie cambiatas)
+
+## To Do's
+- Literally everything, this is a work in progress lol
