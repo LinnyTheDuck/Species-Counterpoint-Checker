@@ -6,7 +6,7 @@ Each rule has a stable id the engine and UI share. Severity is `error` (breaks t
 
 Source column:
 - `notes` = course notes (MUSI119 species sheets).
-- `std` = standard rule from the Fux tradition, written from general knowledge. Not checked against the Merryman or Fux text.
+- `std` = standard rule from the Fux tradition, written from general knowledge.
 - `decision` = a call made where the notes are silent, recorded under Decisions below.
 - `assignment` = changed to match a full-marks assignment, recorded under Decisions below.
 
@@ -99,7 +99,7 @@ Interval names are between the two voices unless the rule says melodic. Compound
 
 ## Decisions
 
-Made where the course notes are silent. These follow common Fux-tradition practice. They are not checked against the Merryman text, which is not available here. Full-marks assignments used as test fixtures will confirm or overturn them.
+I don't have all my course notes, so these follow common Fux-tradition practice. I have used my full marks assignments as tests to confirm or deny rules.
 
 - Direct 5ths and 8ves (`direct-perfect`): the notes define them but do not ban them. Strict two-part writing avoids them, and the step-in-the-upper-voice exception comes from four-part harmony. So: error when the upper voice leaps, warning when it steps.
 - 2nd species direct 5ths (`s2-direct-fifth`): the notes only ban direct octaves from beat 2 to beat 1. Direct 5ths there are a warning, not an error.

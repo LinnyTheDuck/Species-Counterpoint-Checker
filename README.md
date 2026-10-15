@@ -1,83 +1,95 @@
 # Species Counterpoint Checker
 
-This software is designed to take in 2 part counterpoint and evaluate if the music provided follows the rules of counterpoint
+Checks two-part species counterpoint against the rules in [RULES.md](RULES.md) and says which rules a piece breaks. First species works. Second to fifth species are still to come.
 
-## Format for the input file:
+The engine is Rust. A GraphQL API serves it to the checker page.
 
-The input file should be comprised of three lines. The first line should be the key signature represented by: `<Value> <Accidental> <Minor/Major>`
+## Layout
 
-For the `<Value>` and `<Accidental>` fields see the _pitch_ section. An Uppercase `M` signals a major key and a lowercase `m` signals a minor key.
+- `crates/core`: the rule engine. Pitches, intervals, keys, the rules, and the rule descriptions shown to users (`catalogue.rs`). No web code.
+- `crates/api`: the GraphQL service (axum and async-graphql).
+- `RULES.md`: the rule spec. Each rule has an id that the engine, the API and the page all use, and a note of where it came from.
 
-For the bottom two lines, the top line should be the melody and the bottom line should be the Cantus Firmi.
+## Running it
 
-The input for a single note comprises of three parts: `<length> <beat> <pitch>`
-
-_Length_ is the time value of the note. This is not needed for first species or the Cantus Firmi. It follows the American system:
-
-```
-1 = whole note/semibreve
-2 = half note/minim
-4 = quater note/crotchet
-
-any other inputs are invalid
-```
-_Beat_ refers to the beat in a bar that the note lands on. This mostly applies to fourth and fifth species counterpoint, so for first to third species this value can be omitted.
-
-_Pitch_ of a note comprises of three parts: `<Value> <Accidental> <Octave>`
-
-The _value_ of a note is the note letter (from A-G) and **must** be written using captial letters.
-
-The _accidental_ of a note refers to if the note has been raised or lowered by a semitone. Lowercase `b` is used to represent a flat, `#` is used to represent a sharp, lowercase `d` can be used to represent a natural if needed. 
-
-The program will work out the key signature, so if a note has an accidental ruled by the key signature, it does not matter if you put the corresponding accidental next to the note. In theory an accidental should last for a whole bar, this applies here as well.
-
-For example if the key signature was F# Major, both `F` and `F#` will be regarded as the value of `F#`
-
-The _octave_ of a note is a number that refers to the octave a note is in. Middle C has an octave number of 4.
-
-It is generally advised that the pitch values stay between A2 and G5, but the program allows input from A0 to C8.
-
-_Rests_ can be inputted with an `R` but only at the beginning of a melodic line. These will automatically default to a minim rest - this value cannot be changed.
-
-Each note should be separated with a coma. Spaces and pipes (`|`) are ignored and can be used for formatting (ie. note spacings and barlines respectively). Here are some examples of input files:
-
-First Species (note the ommited beat and length values):
+You need Rust, installed with [rustup](https://rustup.rs).
 
 ```
-CM
-E4, F4, D5, E5
-C3, D3, G2, C3
+cargo run -p counterpoint-api
 ```
 
-Second Species (note the omitted beat values and the use of flats):
+The API listens on http://127.0.0.1:8080. Set `PORT` to use another port. Open http://127.0.0.1:8080 in a browser for the GraphiQL explorer. Queries go to `/graphql`.
+
+Each check is logged to the terminal with the notes sent and the rules broken.
+
+Cross-origin requests are only allowed from `http://localhost:*` and `http://127.0.0.1:*`, so the site can call the API during local development.
+
+## Tests
 
 ```
-BbM
-R, 2D4, | 2Eb4, 2G4, | 2C4, 2A4, | 1Bb4
-B2,     | C3,        | F3,       | B2
-
+cargo test                          # everything
+cargo test -p counterpoint-core     # just the engine
+cargo test species1                 # tests with "species1" in the name
 ```
 
-Fifth Species:
+Unit tests sit at the bottom of each source file. `crates/core/tests/assignments.rs` holds exercises that got full marks: each one must check with no errors.
 
+## API
+
+### Checking first species
+
+```graphql
+query {
+  checkFirstSpecies(input: {
+    key: "C major"
+    placement: ABOVE
+    cantusFirmus: ["C4", "D4", "E4", "D4", "C4"]
+    counterpoint: ["G4", "A4", "G4", "B4", "C5"]
+  }) {
+    valid
+    violations { rule severity bar beat voice message }
+  }
+}
 ```
-TBD
+
+Returns:
+
+```json
+{
+  "data": {
+    "checkFirstSpecies": {
+      "valid": false,
+      "violations": [
+        {
+          "rule": "parallel-perfect",
+          "severity": "ERROR",
+          "bar": 2,
+          "beat": 1,
+          "voice": null,
+          "message": "Parallel 5ths: P5 to P5."
+        }
+      ]
+    }
+  }
+}
 ```
 
-Maybe one day I can make the input process easier...
+The input fields:
+- `key`: a tonic and `major` or `minor`, such as `"C major"`, `"F# minor"` or `"Bb major"`.
+- `placement`: `ABOVE` or `BELOW`, meaning the counterpoint above or below the cantus firmus.
+- `cantusFirmus`, `counterpoint`: one pitch per bar, at most 64. A pitch is a letter, then `#` or `b` (up to two), then an octave from 0 to 9. Middle C is `C4`.
+- `ties` (optional): bars, counted from 1, whose counterpoint note is tied into the next bar. Both bars must hold the same note.
 
-## Usage:
+`valid` is true when there are no errors. Warnings don't make a piece invalid. `voice` is `CANTUS_FIRMUS`, `COUNTERPOINT`, or null when the problem is between the two voices.
 
-Run the program using: `cat <file.txt> | java Run <species>`
+Input the engine cannot check, such as a bad pitch or voices of different lengths, comes back as a GraphQL error.
 
-Where `<file.txt>` is the input file and `<species>` is a value from 1-5 depending on the type of counterpoint you wish to check.
+### Listing the rules
 
-## Things that are checked for:
-- Parallel and Direct Octaves/5ths
-- Consonance in the voices
-- The melodic line and skip rules
-- Crossed Voices
-- Exceptions (ie cambiatas)
+```graphql
+query {
+  firstSpeciesRules { id group severity summary }
+}
+```
 
-## To Do's
-- Literally everything, this is a work in progress lol
+Returns every rule first species checks, in the order the page shows them.
