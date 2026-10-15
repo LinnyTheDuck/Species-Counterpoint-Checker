@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+pub mod catalogue;
 mod interval;
 mod key;
 mod pitch;
@@ -9,6 +10,7 @@ pub mod rules;
 pub mod species1;
 mod violation;
 
+pub use catalogue::{FIRST_SPECIES_RULES, RuleInfo};
 pub use interval::{Interval, Quality};
 pub use key::{Key, Mode};
 pub use pitch::{Letter, Pitch};

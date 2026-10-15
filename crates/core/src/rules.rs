@@ -120,12 +120,12 @@ pub fn melodic_rules(line: &Line, out: &mut Vec<Violation>) {
                 voice,
                 format!("Melodic {m} from {from} to {to}."),
             ));
-        } else if m.steps == 5 && !(dirs[i] > 0 && m.quality() == Quality::Minor) {
+        } else if m.steps == 5 && m.quality() == Quality::Major {
             out.push(Violation::warning(
                 "melodic-sixth",
                 at,
                 voice,
-                format!("Melodic {m} from {from} to {to}. Only a rising minor 6th is allowed."),
+                format!("Melodic {m} from {from} to {to}. Only minor 6ths are allowed."),
             ));
         }
 
@@ -305,17 +305,8 @@ pub fn cadence_step(cf: &Line, cp: &Line, out: &mut Vec<Violation>) {
     }
 }
 
-/// Checks `spacing` and `voice-crossing` on one vertical.
-pub fn spacing(v: &Vertical, placement: Placement, out: &mut Vec<Violation>) {
-    let iv = v.interval();
-    if iv.steps > 9 {
-        out.push(Violation::warning(
-            "spacing",
-            v.at,
-            None,
-            format!("Voices are a {iv} apart, more than a 10th."),
-        ));
-    }
+/// Checks `voice-crossing` on one vertical.
+pub fn voice_crossing(v: &Vertical, placement: Placement, out: &mut Vec<Violation>) {
     let crossed = match placement {
         Placement::Above => v.cp.semitones() < v.cf.semitones(),
         Placement::Below => v.cp.semitones() > v.cf.semitones(),

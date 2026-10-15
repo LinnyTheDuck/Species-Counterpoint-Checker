@@ -15,14 +15,14 @@ pub fn build() -> CounterpointSchema {
 }
 
 /// Whether the counterpoint sits above or below the cantus firmus.
-#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+#[derive(Enum, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Placement {
     Above,
     Below,
 }
 
 /// How serious a broken rule is.
-#[derive(Enum, Clone, Copy, PartialEq, Eq)]
+#[derive(Enum, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Severity {
     Error,
     Warning,
@@ -43,6 +43,9 @@ pub struct FirstSpeciesInput {
     placement: Placement,
     cantus_firmus: Vec<String>,
     counterpoint: Vec<String>,
+    /// Bars, counted from 1, whose counterpoint note is tied into the next bar.
+    #[graphql(default)]
+    ties: Vec<usize>,
 }
 
 /// A broken rule; `rule` is the id from RULES.md.
@@ -55,6 +58,15 @@ pub struct Violation {
     /// The line at fault, or null when the problem is between the voices.
     voice: Option<Voice>,
     message: String,
+}
+
+/// A rule the checker applies; `id` matches the violations.
+#[derive(SimpleObject)]
+pub struct Rule {
+    id: &'static str,
+    group: &'static str,
+    severity: Severity,
+    summary: &'static str,
 }
 
 /// The outcome of checking an exercise.
@@ -74,31 +86,68 @@ impl Query {
         core::version()
     }
 
+    /// Rules first species checks, in display order.
+    async fn first_species_rules(&self) -> Vec<Rule> {
+        core::FIRST_SPECIES_RULES
+            .iter()
+            .map(|r| Rule {
+                id: r.id,
+                group: r.group,
+                severity: r.severity.into(),
+                summary: r.summary,
+            })
+            .collect()
+    }
+
     /// Checks a first species exercise against the rules in RULES.md.
     async fn check_first_species(&self, input: FirstSpeciesInput) -> Result<CheckResult> {
-        let exercise = core::FirstSpecies {
-            key: input
-                .key
-                .parse()
-                .map_err(|e: core::ParseError| Error::new(e.0))?,
-            placement: match input.placement {
-                Placement::Above => core::Placement::Above,
-                Placement::Below => core::Placement::Below,
-            },
-            cantus_firmus: parse_line("cantusFirmus", &input.cantus_firmus)?,
-            counterpoint: parse_line("counterpoint", &input.counterpoint)?,
-        };
-        let violations: Vec<Violation> = exercise
-            .check()
-            .map_err(|e| Error::new(e.0))?
-            .into_iter()
-            .map(Violation::from)
-            .collect();
-        Ok(CheckResult {
-            valid: violations.iter().all(|v| v.severity != Severity::Error),
-            violations,
-        })
+        eprintln!(
+            "checkFirstSpecies key=\"{}\" placement={:?}\n  cf: {}\n  cp: {}\n  ties: {:?}",
+            input.key,
+            input.placement,
+            input.cantus_firmus.join(" "),
+            input.counterpoint.join(" "),
+            input.ties
+        );
+        let result = check(input);
+        match &result {
+            Ok(r) => {
+                for v in &r.violations {
+                    eprintln!("  bar {} {:?} {}: {}", v.bar, v.severity, v.rule, v.message);
+                }
+                eprintln!("  -> valid={}", r.valid);
+            }
+            Err(e) => eprintln!("  -> input error: {}", e.message),
+        }
+        result
     }
+}
+
+/// Runs the engine on a first species input.
+fn check(input: FirstSpeciesInput) -> Result<CheckResult> {
+    let exercise = core::FirstSpecies {
+        key: input
+            .key
+            .parse()
+            .map_err(|e: core::ParseError| Error::new(e.0))?,
+        placement: match input.placement {
+            Placement::Above => core::Placement::Above,
+            Placement::Below => core::Placement::Below,
+        },
+        cantus_firmus: parse_line("cantusFirmus", &input.cantus_firmus)?,
+        counterpoint: parse_line("counterpoint", &input.counterpoint)?,
+        ties: input.ties,
+    };
+    let violations: Vec<Violation> = exercise
+        .check()
+        .map_err(|e| Error::new(e.0))?
+        .into_iter()
+        .map(Violation::from)
+        .collect();
+    Ok(CheckResult {
+        valid: violations.iter().all(|v| v.severity != Severity::Error),
+        violations,
+    })
 }
 
 /// Parses one voice, naming the field and note index on failure.
@@ -118,14 +167,20 @@ fn parse_line(field: &str, notes: &[String]) -> Result<Vec<core::Pitch>> {
         .collect()
 }
 
+impl From<core::Severity> for Severity {
+    fn from(s: core::Severity) -> Severity {
+        match s {
+            core::Severity::Error => Severity::Error,
+            core::Severity::Warning => Severity::Warning,
+        }
+    }
+}
+
 impl From<core::Violation> for Violation {
     fn from(v: core::Violation) -> Violation {
         Violation {
             rule: v.rule.to_string(),
-            severity: match v.severity {
-                core::Severity::Error => Severity::Error,
-                core::Severity::Warning => Severity::Warning,
-            },
+            severity: v.severity.into(),
             bar: v.at.bar,
             beat: v.at.beat,
             voice: v.voice.map(|voice| match voice {
@@ -181,6 +236,22 @@ mod tests {
         assert_eq!(parallel["severity"], "ERROR");
         assert_eq!(parallel["bar"], 2);
         assert!(parallel["voice"].is_null());
+    }
+
+    #[tokio::test]
+    async fn accepts_ties() {
+        let res = run(r#"{ checkFirstSpecies(input: {
+            key: "A minor", placement: BELOW,
+            cantusFirmus: ["A4","B4","C5","B4","D5","C5","D5","E5","B4","A4"],
+            counterpoint: ["A2","G#2","A2","B2","B2","E3","F3","E3","G#2","A2"],
+            ties: [4]
+        }) { valid violations { rule } } }"#)
+        .await;
+        assert!(res.errors.is_empty(), "{:?}", res.errors);
+        assert_eq!(
+            res.data,
+            value!({ "checkFirstSpecies": { "valid": true, "violations": [] } })
+        );
     }
 
     #[tokio::test]

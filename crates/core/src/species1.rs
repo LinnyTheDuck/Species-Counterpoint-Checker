@@ -9,6 +9,8 @@ pub struct FirstSpecies {
     pub placement: Placement,
     pub cantus_firmus: Vec<Pitch>,
     pub counterpoint: Vec<Pitch>,
+    /// Bars, counted from 1, whose counterpoint note is tied into the next bar.
+    pub ties: Vec<usize>,
 }
 
 impl FirstSpecies {
@@ -28,6 +30,15 @@ impl FirstSpecies {
             )));
         }
 
+        for &bar in &self.ties {
+            if bar < 1 || bar >= cp.len() || cp[bar - 1] != cp[bar] {
+                return Err(InputError(format!(
+                    "Bar {bar} is tied to bar {}, but a tie needs the same note in both bars.",
+                    bar + 1
+                )));
+            }
+        }
+
         let at: Vec<Position> = (1..=cf.len())
             .map(|bar| Position { bar, beat: 1 })
             .collect();
@@ -41,6 +52,15 @@ impl FirstSpecies {
             notes: cp,
             at: &at,
         };
+        let (held, held_at): (Vec<Pitch>, Vec<Position>) = (0..cp.len())
+            .filter(|&i| !self.is_tied_from_previous(i))
+            .map(|i| (cp[i], at[i]))
+            .unzip();
+        let cp_melody = Line {
+            voice: Voice::Counterpoint,
+            notes: &held,
+            at: &held_at,
+        };
         let verticals: Vec<Vertical> = cf
             .iter()
             .zip(cp)
@@ -50,13 +70,13 @@ impl FirstSpecies {
 
         let mut out = Vec::new();
         rules::key_rules(self.key, &cf_line, &mut out);
-        rules::key_rules(self.key, &cp_line, &mut out);
-        rules::melodic_rules(&cp_line, &mut out);
+        rules::key_rules(self.key, &cp_melody, &mut out);
+        rules::melodic_rules(&cp_melody, &mut out);
         rules::start_perfect(&verticals[0], self.placement, &mut out);
         rules::end_perfect(verticals.last().unwrap(), &mut out);
         rules::cadence_step(&cf_line, &cp_line, &mut out);
         for v in &verticals {
-            rules::spacing(v, self.placement, &mut out);
+            rules::voice_crossing(v, self.placement, &mut out);
         }
         for w in verticals.windows(2) {
             rules::parallels(&w[0], &w[1], self.placement, &mut out);
@@ -65,6 +85,11 @@ impl FirstSpecies {
 
         out.sort_by_key(|v| v.at);
         Ok(out)
+    }
+
+    /// Returns true when the counterpoint note at an index continues a tie from the bar before.
+    fn is_tied_from_previous(&self, index: usize) -> bool {
+        self.ties.contains(&index)
     }
 
     /// Checks the rules in the 1st species table of RULES.md.
@@ -113,12 +138,12 @@ impl FirstSpecies {
                 run_number = 0;
             }
 
-            if i > 0 && v.cp == verticals[i - 1].cp {
+            if i > 0 && v.cp == verticals[i - 1].cp && !self.is_tied_from_previous(i) {
                 out.push(Violation::warning(
                     "s1-repeated-note",
                     v.at,
                     Some(Voice::Counterpoint),
-                    format!("{} is repeated.", v.cp),
+                    format!("{} is repeated without a tie.", v.cp),
                 ));
             }
         }
@@ -148,15 +173,34 @@ mod tests {
         s.split_whitespace().map(|p| p.parse().unwrap()).collect()
     }
 
-    fn check(key: &str, placement: Placement, cf: &str, cp: &str) -> Vec<Violation> {
+    fn exercise(
+        key: &str,
+        placement: Placement,
+        cf: &str,
+        cp: &str,
+        ties: &[usize],
+    ) -> FirstSpecies {
         FirstSpecies {
             key: key.parse().unwrap(),
             placement,
             cantus_firmus: line(cf),
             counterpoint: line(cp),
+            ties: ties.to_vec(),
         }
-        .check()
-        .unwrap()
+    }
+
+    fn check(key: &str, placement: Placement, cf: &str, cp: &str) -> Vec<Violation> {
+        exercise(key, placement, cf, cp, &[]).check().unwrap()
+    }
+
+    fn check_tied(
+        key: &str,
+        placement: Placement,
+        cf: &str,
+        cp: &str,
+        ties: &[usize],
+    ) -> Vec<Violation> {
+        exercise(key, placement, cf, cp, ties).check().unwrap()
     }
 
     fn rules(v: &[Violation]) -> Vec<&'static str> {
@@ -200,13 +244,36 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_lengths() {
-        let ex = FirstSpecies {
-            key: "C major".parse().unwrap(),
-            placement: Placement::Above,
-            cantus_firmus: line("C4 D4 C4"),
-            counterpoint: line("C5 B4"),
-        };
+        let ex = exercise("C major", Placement::Above, "C4 D4 C4", "C5 B4", &[]);
         assert!(ex.check().is_err());
+    }
+
+    const TIED_CF: &str = "A4 B4 C5 B4 D5 C5 D5 E5 B4 A4";
+    const TIED_CP: &str = "A2 G#2 A2 B2 B2 E3 F3 E3 G#2 A2";
+
+    #[test]
+    fn tied_repeat_is_allowed() {
+        let tied = check_tied("A minor", Placement::Below, TIED_CF, TIED_CP, &[4]);
+        assert!(!rules(&tied).contains(&"s1-repeated-note"), "{tied:#?}");
+        let untied = check("A minor", Placement::Below, TIED_CF, TIED_CP);
+        assert!(rules(&untied).contains(&"s1-repeated-note"));
+    }
+
+    #[test]
+    fn tie_needs_the_same_note() {
+        for ties in [[1], [9], [10], [0]] {
+            let ex = exercise("A minor", Placement::Below, TIED_CF, TIED_CP, &ties);
+            assert!(ex.check().is_err(), "tie at {ties:?}");
+        }
+    }
+
+    #[test]
+    fn tied_climax_counts_once() {
+        let (cf, cp) = ("C4 D4 F4 D4 C4", "C5 D5 D5 B4 C5");
+        let tied = check_tied("C major", Placement::Above, cf, cp, &[2]);
+        assert!(!rules(&tied).contains(&"single-climax"), "{tied:#?}");
+        let untied = check("C major", Placement::Above, cf, cp);
+        assert!(rules(&untied).contains(&"single-climax"));
     }
 
     #[test]
@@ -359,6 +426,19 @@ mod tests {
             "C5 F4 G4 A4 B4 A4 G4 B4 C5",
         );
         assert!(rules(&v).contains(&"s1-imperfect-run"), "{v:#?}");
+    }
+
+    #[test]
+    fn allows_falling_minor_sixth_but_not_major() {
+        let minor = check(
+            "A minor",
+            Placement::Below,
+            "A4 B4 C5 B4 A4",
+            "A3 C4 E3 G#3 A3",
+        );
+        assert!(!rules(&minor).contains(&"melodic-sixth"), "{minor:#?}");
+        let major = check("C major", Placement::Above, "C4 D4 C4", "C5 A4 C4");
+        assert!(rules(&major).contains(&"melodic-sixth"), "{major:#?}");
     }
 
     #[test]

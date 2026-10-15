@@ -8,6 +8,7 @@ Source column:
 - `notes` = course notes (MUSI119 species sheets).
 - `std` = standard rule from the Fux tradition, written from general knowledge. Not checked against the Merryman or Fux text.
 - `decision` = a call made where the notes are silent, recorded under Decisions below.
+- `assignment` = changed to match a full-marks assignment, recorded under Decisions below.
 
 Interval names are between the two voices unless the rule says melodic. Compound intervals count as their simple form (a 12th is a 5th).
 
@@ -24,13 +25,12 @@ Interval names are between the two voices unless the rule says melodic. Compound
 | `melodic-forbidden` | No melodic augmented 4ths, diminished 5ths, 7ths or 9ths. | error | notes |
 | `melodic-augmented` | No other augmented or diminished melodic intervals. | error | std |
 | `melodic-over-octave` | No melodic leap larger than an octave. | error | std |
-| `melodic-sixth` | Melodic 6th only as an ascending minor 6th. | warning | std |
+| `melodic-sixth` | Melodic 6th only as a minor 6th, rising or falling. | warning | std, assignment |
 | `leap-recovery` | A leap larger than a 4th is followed by a step in the opposite direction. | warning | std |
 | `consecutive-leaps` | No more than two leaps in a row in the same direction; two in a row outline a consonant triad. | warning | std |
 | `tritone-outline` | Line does not outline a tritone between its local high and low points. | warning | std |
 | `single-climax` | CP has one highest note, used once. | warning | std |
 | `range` | CP stays within a 10th. | warning | std |
-| `spacing` | Voices no more than a 10th apart (12th at most, briefly). | warning | std |
 | `voice-crossing` | CP does not cross the CF. | warning | std, decision |
 | `parallel-perfect` | No parallel 5ths, 8ves or unisons between the beats the species rules below say to compare. | error | notes |
 | `direct-perfect` | No direct (hidden) 5ths or 8ves: both voices moving the same way into a perfect interval. Error when the upper voice leaps; warning when it moves by step. | error / warning | notes (defined), decision |
@@ -43,7 +43,7 @@ Interval names are between the two voices unless the rule says melodic. Compound
 | `s1-unison-middle` | Unison only on the first or last note. | error | std |
 | `s1-parallels` | `parallel-perfect` and `direct-perfect` apply between every pair of consecutive notes. | error | notes |
 | `s1-imperfect-run` | No more than three 3rds or 6ths in a row. | warning | std |
-| `s1-repeated-note` | Avoid repeating a CP note. | warning | std |
+| `s1-repeated-note` | Avoid repeating a CP note, unless it is tied over the barline. | warning | std, assignment |
 | `s1-cadence` | Penultimate interval is M6 to P8 (CP above) or m3 to P8 (CP below), compounds allowed. | error | std, decision |
 
 ## 2nd species (two minims against a semibreve)
@@ -106,3 +106,6 @@ Made where the course notes are silent. These follow common Fux-tradition practi
 - Minor keys (`diatonic`, `minor-6-7`, `cadence-leading-note`): raised 6th and 7th are allowed in both voices. The leading note is required at the cadence in whichever voice has the 7–8 motion. Raised 6th and 7th rise, natural 6th and 7th fall.
 - CP below the CF (`start-perfect`, `s1-cadence`): starts on P1 or P8 only, since a 5th below puts the CP in the wrong mode. The CF ends 2–1, so the CP below ends 7–1, a m3 (or m10) to P8.
 - Voice crossing (`voice-crossing`): texts differ on brief crossing, so it is a warning.
+- Spacing: the `std` rule "voices no more than a 10th apart" is dropped. A full-marks first species assignment (A minor, CP below) keeps the voices two octaves apart throughout.
+- Ties in 1st species (`s1-repeated-note`): the same assignment ties a repeated note (bars 4–5), which was allowed. A tied repeat is not flagged, and the melody rules treat tied notes as one note.
+- Melodic 6ths (`melodic-sixth`): the same assignment falls a minor 6th (E3 to G#2), so falling minor 6ths are allowed. Major 6ths still warn.
