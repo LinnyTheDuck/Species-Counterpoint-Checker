@@ -20,7 +20,6 @@ pub enum Quality {
 pub struct Interval {
     /// Diatonic steps, 0 for a unison, 7 for an octave.
     pub steps: i32,
-    /// Semitones between the two pitches.
     pub semitones: i32,
 }
 
@@ -41,7 +40,6 @@ impl Interval {
         self.steps % 7 + 1
     }
 
-    /// Returns the interval quality.
     pub fn quality(self) -> Quality {
         let simple = (self.steps % 7) as usize;
         let diff = self.semitones - 12 * (self.steps / 7) - MAJOR_SEMITONES[simple];
@@ -52,6 +50,7 @@ impl Interval {
                 d => Quality::Diminished(-d),
             }
         } else {
+            // Minor sits between major and diminished, so diminished starts one further down.
             match diff {
                 0 => Quality::Major,
                 -1 => Quality::Minor,

@@ -41,7 +41,6 @@ impl fmt::Display for InputError {
 impl std::error::Error for ParseError {}
 impl std::error::Error for InputError {}
 
-/// Returns the engine version.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }

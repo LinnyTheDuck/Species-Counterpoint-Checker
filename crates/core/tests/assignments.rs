@@ -6,7 +6,6 @@ fn line(s: &str) -> Vec<Pitch> {
     s.split_whitespace().map(|p| p.parse().unwrap()).collect()
 }
 
-/// Checks a first species exercise and fails on any error.
 fn assert_no_errors(key: &str, placement: Placement, cf: &str, cp: &str, ties: &[usize]) {
     let exercise = FirstSpecies {
         key: key.parse().unwrap(),

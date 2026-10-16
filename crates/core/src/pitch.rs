@@ -47,7 +47,6 @@ impl fmt::Display for Letter {
     }
 }
 
-/// Writes an alteration as sharps or flats.
 pub(crate) fn write_alter(f: &mut fmt::Formatter<'_>, alter: i8) -> fmt::Result {
     let sign = if alter > 0 { "#" } else { "b" };
     write!(f, "{}", sign.repeat(alter.unsigned_abs() as usize))
@@ -62,7 +61,6 @@ pub struct Pitch {
 }
 
 impl Pitch {
-    /// Creates a pitch from its letter, alteration in semitones and octave.
     pub fn new(letter: Letter, alter: i8, octave: i8) -> Pitch {
         Pitch {
             letter,

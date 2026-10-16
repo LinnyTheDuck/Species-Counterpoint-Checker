@@ -3,7 +3,6 @@
 use crate::rules::{self, Line, Placement, Vertical};
 use crate::{InputError, Key, Pitch, Position, Quality, Violation, Voice};
 
-/// A first species exercise.
 pub struct FirstSpecies {
     pub key: Key,
     pub placement: Placement,
@@ -87,7 +86,7 @@ impl FirstSpecies {
         Ok(out)
     }
 
-    /// Returns true when the counterpoint note at an index continues a tie from the bar before.
+    /// Returns true when the note at a 0-based index is tied from the bar before, which works because `ties` counts bars from 1.
     fn is_tied_from_previous(&self, index: usize) -> bool {
         self.ties.contains(&index)
     }

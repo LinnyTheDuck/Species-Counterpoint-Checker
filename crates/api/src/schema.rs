@@ -9,7 +9,6 @@ const MAX_NOTES: usize = 64;
 
 pub type CounterpointSchema = Schema<Query, EmptyMutation, EmptySubscription>;
 
-/// Builds the GraphQL schema.
 pub fn build() -> CounterpointSchema {
     Schema::build(Query, EmptyMutation, EmptySubscription).finish()
 }
@@ -35,7 +34,7 @@ pub enum Voice {
     Counterpoint,
 }
 
-/// A first species exercise. Pitches are written like C4, F#3 or Bb4, middle C is C4.
+/// A first species exercise, with pitches written like C4, F#3 or Bb4 and middle C as C4.
 #[derive(InputObject)]
 pub struct FirstSpeciesInput {
     /// Key such as "C major" or "F# minor".
@@ -123,7 +122,6 @@ impl Query {
     }
 }
 
-/// Runs the engine on a first species input.
 fn check(input: FirstSpeciesInput) -> Result<CheckResult> {
     let exercise = core::FirstSpecies {
         key: input

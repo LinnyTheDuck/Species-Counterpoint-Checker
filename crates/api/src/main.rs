@@ -8,7 +8,6 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 mod schema;
 
-/// Serves the GraphiQL explorer.
 async fn graphiql() -> impl IntoResponse {
     Html(GraphiQLSource::build().endpoint("/graphql").finish())
 }

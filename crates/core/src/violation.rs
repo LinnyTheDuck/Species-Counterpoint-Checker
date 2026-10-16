@@ -1,4 +1,3 @@
-/// How serious a broken rule is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -31,7 +30,6 @@ pub struct Violation {
 }
 
 impl Violation {
-    /// Creates an error.
     pub fn error(
         rule: &'static str,
         at: Position,
@@ -47,7 +45,6 @@ impl Violation {
         }
     }
 
-    /// Creates a warning.
     pub fn warning(
         rule: &'static str,
         at: Position,

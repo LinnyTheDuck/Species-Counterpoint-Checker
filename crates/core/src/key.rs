@@ -4,14 +4,12 @@ use std::str::FromStr;
 use crate::pitch::write_alter;
 use crate::{Letter, ParseError, Pitch};
 
-/// Major or minor mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Major,
     Minor,
 }
 
-/// A major or minor key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Key {
     pub tonic: Letter,
@@ -20,7 +18,6 @@ pub struct Key {
 }
 
 impl Key {
-    /// Creates a key from its tonic letter, tonic alteration and mode.
     pub fn new(tonic: Letter, alter: i8, mode: Mode) -> Key {
         Key { tonic, alter, mode }
     }
@@ -39,6 +36,7 @@ impl Key {
         let tonic = self.tonic.semitones() + self.alter as i32;
         let actual = (p.semitones() - tonic).rem_euclid(12);
         let diff = actual - scale[(self.degree(p) - 1) as usize];
+        // Wraps into -6..=5 so a flat reads as -1, not 11.
         (diff + 6).rem_euclid(12) - 6
     }
 

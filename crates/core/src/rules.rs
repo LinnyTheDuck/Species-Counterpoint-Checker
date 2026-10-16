@@ -3,7 +3,6 @@
 use crate::interval::direction;
 use crate::{Interval, Key, Pitch, Position, Quality, Violation, Voice};
 
-/// Whether the counterpoint sits above or below the cantus firmus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
     Above,
@@ -26,7 +25,6 @@ pub struct Vertical {
 }
 
 impl Vertical {
-    /// Returns the interval between the two voices.
     pub fn interval(&self) -> Interval {
         Interval::between(self.cf, self.cp)
     }
