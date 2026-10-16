@@ -16,12 +16,13 @@ Interval names are between the two voices unless the rule says melodic. Compound
 
 | id | Rule | Severity | Source |
 |---|---|---|---|
-| `start-perfect` | First sounding interval is P1, P5 or P8 (CP above); P1 or P8 (CP below). | error | std |
+| `start-perfect` | First sounding interval is P1, P5 or P8 (CP above); P1 or P8 (CP below). After an opening rest, a 3rd above is also allowed. | error | std, assignment |
 | `end-perfect` | Last interval is P1 or P8. | error | std |
 | `cadence-step` | Both voices approach the final note by step, in contrary motion. | error | std |
 | `cadence-leading-note` | Penultimate CP note is the leading note (raised 7th in minor) when the CP has the 7–8 motion. | error | std |
+| `cf-tonic` | The CF starts and ends on the tonic of the key. A warning, since it mostly catches a key picked wrongly, such as G major for an E minor CF. | warning | std, decision |
 | `diatonic` | Only notes of the key, plus raised 6th and 7th in minor. | error | std |
-| `minor-6-7` | In minor, raised 6th and 7th go up (to 7 and 8); natural 6th and 7th go down. | warning | std |
+| `minor-6-7` | In minor, a natural 7th does not step up to the tonic, and a raised 6th does not step down to the 5th. | warning | std, assignment |
 | `melodic-forbidden` | No melodic augmented 4ths, diminished 5ths, 7ths or 9ths. | error | notes |
 | `melodic-augmented` | No other augmented or diminished melodic intervals. | error | std |
 | `melodic-over-octave` | No melodic leap larger than an octave. | error | std |
@@ -44,22 +45,22 @@ Interval names are between the two voices unless the rule says melodic. Compound
 | `s1-parallels` | `parallel-perfect` and `direct-perfect` apply between every pair of consecutive notes. | error | notes |
 | `s1-imperfect-run` | No more than three 3rds or 6ths in a row. | warning | std |
 | `s1-repeated-note` | Avoid repeating a CP note, unless it is tied over the barline. | warning | std, assignment |
-| `s1-cadence` | Penultimate interval is M6 to P8 (CP above) or m3 to P8 (CP below), compounds allowed. | error | std, decision |
+| `s1-cadence` | Penultimate interval is M6 to P8 when the upper voice has the leading note, m3 to P8 when the lower voice has it, compounds allowed. | error | std, decision, assignment |
 
 ## 2nd species (two minims against a semibreve)
 
 | id | Rule | Severity | Source |
 |---|---|---|---|
-| `s2-rhythm` | Two minims a bar, last bar a semibreve. May start with a minim rest. | error | std, README |
+| `s2-rhythm` | Two minims a bar, last bar a semibreve. The penultimate bar may be a semibreve. May start with a minim rest. | error | std, README, assignment |
 | `s2-strong-consonant` | Beat 1 is consonant (1st species list). | error | notes |
 | `s2-passing-dissonance` | A dissonant beat 2 is a passing note: approached and left by step in the same direction. | error | notes |
 | `s2-parallels-strong` | No parallel 5ths or 8ves on consecutive beat 1s. | error | notes |
 | `s2-parallels-weak-strong` | No parallel 5ths or 8ves from beat 2 to the next beat 1. | error | notes |
-| `s2-direct-octave` | No direct octaves from beat 2 to the next beat 1. | error | notes |
-| `s2-direct-fifth` | Avoid direct 5ths from beat 2 to the next beat 1. | warning | decision |
+| `s2-direct-octave` | No direct octaves from beat 2 (or a penultimate semibreve) to the next beat 1. | error | notes |
+| `s2-direct-fifth` | Avoid direct 5ths from beat 2 (or a penultimate semibreve) to the next beat 1. | warning | decision |
 | `s2-unison-strong` | No unison on beat 1 except the first and last bar. | error | std |
 | `s2-repeated-note` | No repeated notes. | error | std |
-| `s2-cadence` | Penultimate bar ends 5–M6 to P8 above, or equivalent below. | warning | std |
+| `s2-cadence` | Penultimate bar ends M6 to P8 when the upper voice has the leading note, m3 to P8 when the lower voice has it. Two minims with the leading note in the CP go 5–6 above or 5–3 below. | warning | std, decision, assignment |
 
 ## 3rd species (four crotchets against a semibreve)
 
@@ -103,9 +104,13 @@ I don't have all my course notes, so these follow common Fux-tradition practice.
 
 - Direct 5ths and 8ves (`direct-perfect`): the notes define them but do not ban them. Strict two-part writing avoids them, and the step-in-the-upper-voice exception comes from four-part harmony. So: error when the upper voice leaps, warning when it steps.
 - 2nd species direct 5ths (`s2-direct-fifth`): the notes only ban direct octaves from beat 2 to beat 1. Direct 5ths there are a warning, not an error.
-- Minor keys (`diatonic`, `minor-6-7`, `cadence-leading-note`): raised 6th and 7th are allowed in both voices. The leading note is required at the cadence in whichever voice has the 7–8 motion. Raised 6th and 7th rise, natural 6th and 7th fall.
-- CP below the CF (`start-perfect`, `s1-cadence`): starts on P1 or P8 only, since a 5th below puts the CP in the wrong mode. The CF ends 2–1, so the CP below ends 7–1, a m3 (or m10) to P8.
+- Minor keys (`diatonic`, `minor-6-7`, `cadence-leading-note`): raised 6th and 7th are allowed in both voices. The leading note is required at the cadence in whichever voice has the 7–8 motion. Within the line, `minor-6-7` only flags a natural 7th stepping up to the tonic and a raised 6th stepping down to the 5th. The D minor assignment rises Bb–C then leaps away, which was accepted, and a raised 7th dipping to the raised 6th and back (C#–B–C#–D) is a normal turn. A raised 7th that keeps falling (C#–B–A) is still flagged at B–A.
+- CP below the CF (`start-perfect`, `s1-cadence`): starts on P1 or P8 only, since a 5th below puts the CP in the wrong mode.
+- Cadence interval (`s1-cadence`, `s2-cadence`): the voice with the leading note decides it, not the placement. With the leading note in the upper voice it is M6 to P8; in the lower voice, m3 to P8. Over a CF ending 2–1 that gives M6 above and m3 below; over a CF ending 7–1 (as in the D minor 2nd species assignment) it gives m3 above and M6 below.
 - Voice crossing (`voice-crossing`): texts differ on brief crossing, so it is a warning.
 - Spacing: the `std` rule "voices no more than a 10th apart" is dropped. A full-marks first species assignment (A minor, CP below) keeps the voices two octaves apart throughout.
 - Ties in 1st species (`s1-repeated-note`): the same assignment ties a repeated note (bars 4–5), which was allowed. A tied repeat is not flagged, and the melody rules treat tied notes as one note.
 - Melodic 6ths (`melodic-sixth`): the same assignment falls a minor 6th (E3 to G#2), so falling minor 6ths are allowed. Major 6ths still warn.
+- 2nd species input (`s2-rhythm`): the counterpoint is given bar by bar, with an explicit rest for the opening minim rest. A one-note bar is a semibreve, allowed in the last two bars only. A D minor assignment uses a semibreve in the penultimate bar. `start-perfect` checks the first note that sounds, and after the rest a 3rd above is allowed, since the same assignment opens on F over D. A 3rd below the tonic is still an error, as it implies the submediant.
+- 2nd species motion: `s2-parallels-strong`, `s2-parallels-weak-strong`, `s2-direct-octave` and `s2-direct-fifth` replace `parallel-perfect` and `direct-perfect`. Beat 1 to beat 2 is oblique against the held CF note, so it is not checked. Direct octaves are an error even when the upper voice steps, since the notes ban them outright.
+- 2nd species cadence (`s2-cadence`): the interval into the final depends on which voice has the leading note, not on placement. The upper voice with the leading note gives M6 to P8; the lower voice with it gives m3 to P8. The D minor assignment has the CF ending C#–D with the CP above on E, a m10. When the CP has the leading note in two minims, beat 1 is a 5th: 5–M6 above, 5–m3 below (over a CF D, G then B before the final C).

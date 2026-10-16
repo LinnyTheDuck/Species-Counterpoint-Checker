@@ -1,7 +1,7 @@
 //! Rules from the "All species" table in RULES.md.
 
 use crate::interval::direction;
-use crate::{Interval, Key, Pitch, Position, Quality, Violation, Voice};
+use crate::{Interval, Key, Mode, Pitch, Position, Quality, Violation, Voice};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
@@ -30,6 +30,42 @@ impl Vertical {
     }
 }
 
+/// Checks `cf-tonic`: the cantus firmus starts and ends on the tonic, which catches a wrongly chosen key.
+pub fn cf_tonic(key: Key, cf: &Line, out: &mut Vec<Violation>) {
+    let (Some(&first), Some(&last)) = (cf.notes.first(), cf.notes.last()) else {
+        return;
+    };
+    let is_tonic = |p: Pitch| key.degree(p) == 1 && key.alteration(p) == 0;
+    // A CF on the relative key's tonic usually means the other mode with the same signature was meant.
+    let (relative_degree, other_mode) = match key.mode {
+        Mode::Major => (6, Mode::Minor),
+        Mode::Minor => (3, Mode::Major),
+    };
+    let hint = if first.letter == last.letter
+        && first.alter == last.alter
+        && key.degree(first) == relative_degree
+        && key.alteration(first) == 0
+    {
+        format!(
+            " Is the key {}?",
+            Key::new(first.letter, first.alter, other_mode)
+        )
+    } else {
+        String::new()
+    };
+    let ends = [(0, first, "starts"), (cf.notes.len() - 1, last, "ends")];
+    for (i, p, verb) in ends {
+        if !is_tonic(p) {
+            out.push(Violation::warning(
+                "cf-tonic",
+                cf.at[i],
+                Some(cf.voice),
+                format!("The cantus firmus {verb} on {p}, not the tonic of {key}.{hint}"),
+            ));
+        }
+    }
+}
+
 /// Checks `diatonic`, `minor-6-7` and `cadence-leading-note` on one line.
 pub fn key_rules(key: Key, line: &Line, out: &mut Vec<Violation>) {
     let voice = Some(line.voice);
@@ -49,20 +85,21 @@ pub fn key_rules(key: Key, line: &Line, out: &mut Vec<Violation>) {
         if !Interval::between(from, to).is_step() {
             continue;
         }
-        let dir = direction(from, to);
-        if key.is_raised(from) && dir < 0 {
+        // Other moves, such as a raised 7th dipping to the 6th and back, are left to the line.
+        let (dir, degree) = (direction(from, to), key.degree(from));
+        if key.is_raised(from) && degree == 6 && dir < 0 {
             out.push(Violation::warning(
                 "minor-6-7",
                 line.at[i],
                 voice,
                 format!("Raised {from} should rise, not fall to {to}."),
             ));
-        } else if key.is_natural_minor_6_7(from) && dir > 0 {
+        } else if key.is_natural_minor_6_7(from) && degree == 7 && dir > 0 {
             out.push(Violation::warning(
                 "minor-6-7",
                 line.at[i],
                 voice,
-                format!("Natural {from} should fall, not rise to {to}. Raise it to rise."),
+                format!("Natural {from} rises to the tonic {to}. Raise it to the leading note."),
             ));
         }
     }
@@ -253,14 +290,22 @@ fn tritone_outline(line: &Line, dirs: &[i32], out: &mut Vec<Violation>) {
     }
 }
 
-/// Checks `start-perfect` on the first vertical.
-pub fn start_perfect(first: &Vertical, placement: Placement, out: &mut Vec<Violation>) {
+/// Checks `start-perfect` on the first vertical; after an opening rest a 3rd above is allowed too.
+pub fn start_perfect(
+    first: &Vertical,
+    placement: Placement,
+    after_rest: bool,
+    out: &mut Vec<Violation>,
+) {
     let iv = first.interval();
-    let ok = iv.is_octave_class() || (placement == Placement::Above && iv.is_fifth_class());
+    let above = placement == Placement::Above;
+    let third = above && after_rest && iv.simple_number() == 3 && iv.is_consonant();
+    let ok = iv.is_octave_class() || (above && iv.is_fifth_class()) || third;
     if !ok {
-        let allowed = match placement {
-            Placement::Above => "a unison, 5th or octave",
-            Placement::Below => "a unison or octave",
+        let allowed = match (placement, after_rest) {
+            (Placement::Above, true) => "a unison, 3rd, 5th or octave",
+            (Placement::Above, false) => "a unison, 5th or octave",
+            (Placement::Below, _) => "a unison or octave",
         };
         out.push(Violation::error(
             "start-perfect",
@@ -268,6 +313,16 @@ pub fn start_perfect(first: &Vertical, placement: Placement, out: &mut Vec<Viola
             None,
             format!("Starts on a {iv}, should be {allowed}."),
         ));
+    }
+}
+
+/// Returns the interval into the final octave, as (number, quality) and a name, given whether the CF has the leading note.
+pub fn into_final(placement: Placement, cf_leads: bool) -> ((i32, Quality), &'static str) {
+    // M6 when the upper voice has the leading note, m3 when the lower voice has it.
+    if (placement == Placement::Above) != cf_leads {
+        ((6, Quality::Major), "a major 6th")
+    } else {
+        ((3, Quality::Minor), "a minor 3rd")
     }
 }
 
@@ -319,13 +374,24 @@ pub fn voice_crossing(v: &Vertical, placement: Placement, out: &mut Vec<Violatio
     }
 }
 
-/// Checks `parallel-perfect` and `direct-perfect` from one vertical to the next.
-pub fn parallels(prev: &Vertical, next: &Vertical, placement: Placement, out: &mut Vec<Violation>) {
+/// Both voices moving the same way into a perfect 5th, octave or unison.
+pub struct IntoPerfect {
+    /// True when the interval before is the same perfect interval, false for direct motion.
+    pub parallel: bool,
+    /// "5ths", "octaves" or "unisons".
+    pub name: &'static str,
+    pub from: Interval,
+    pub to: Interval,
+    pub upper_steps: bool,
+}
+
+/// Returns how the voices move into a perfect interval, or None when they do not.
+pub fn into_perfect(prev: &Vertical, next: &Vertical, placement: Placement) -> Option<IntoPerfect> {
     let cf_dir = direction(prev.cf, next.cf);
     let cp_dir = direction(prev.cp, next.cp);
     let (from, to) = (prev.interval(), next.interval());
     if cf_dir == 0 || cf_dir != cp_dir || !(to.is_octave_class() || to.is_fifth_class()) {
-        return;
+        return None;
     }
 
     let name = if to.is_fifth_class() {
@@ -335,9 +401,28 @@ pub fn parallels(prev: &Vertical, next: &Vertical, placement: Placement, out: &m
     } else {
         "octaves"
     };
-    let same_class = (from.is_octave_class() && to.is_octave_class())
+    let parallel = (from.is_octave_class() && to.is_octave_class())
         || (from.is_fifth_class() && to.is_fifth_class());
-    if same_class {
+    let (upper_from, upper_to) = match placement {
+        Placement::Above => (prev.cp, next.cp),
+        Placement::Below => (prev.cf, next.cf),
+    };
+    Some(IntoPerfect {
+        parallel,
+        name,
+        from,
+        to,
+        upper_steps: Interval::between(upper_from, upper_to).is_step(),
+    })
+}
+
+/// Checks `parallel-perfect` and `direct-perfect` from one vertical to the next.
+pub fn parallels(prev: &Vertical, next: &Vertical, placement: Placement, out: &mut Vec<Violation>) {
+    let Some(m) = into_perfect(prev, next, placement) else {
+        return;
+    };
+    let IntoPerfect { name, from, to, .. } = m;
+    if m.parallel {
         out.push(Violation::error(
             "parallel-perfect",
             next.at,
@@ -347,12 +432,8 @@ pub fn parallels(prev: &Vertical, next: &Vertical, placement: Placement, out: &m
         return;
     }
 
-    let (upper_from, upper_to) = match placement {
-        Placement::Above => (prev.cp, next.cp),
-        Placement::Below => (prev.cf, next.cf),
-    };
     let message = format!("Direct {name}: both voices move the same way into a {to}.");
-    if Interval::between(upper_from, upper_to).is_step() {
+    if m.upper_steps {
         out.push(Violation::warning("direct-perfect", next.at, None, message));
     } else {
         out.push(Violation::error("direct-perfect", next.at, None, message));
@@ -362,6 +443,65 @@ pub fn parallels(prev: &Vertical, next: &Vertical, placement: Placement, out: &m
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cf_tonic_suggests_the_relative_key() {
+        let notes: Vec<Pitch> = ["E3", "B2", "F#3", "E3"]
+            .iter()
+            .map(|p| p.parse().unwrap())
+            .collect();
+        let at: Vec<Position> = (1..=4).map(|bar| Position { bar, beat: 1 }).collect();
+        let cf = Line {
+            voice: Voice::CantusFirmus,
+            notes: &notes,
+            at: &at,
+        };
+        let mut out = Vec::new();
+        cf_tonic("G major".parse().unwrap(), &cf, &mut out);
+        let found: Vec<_> = out.iter().map(|v| (v.at.bar, v.message.as_str())).collect();
+        assert_eq!(
+            found,
+            [
+                (
+                    1,
+                    "The cantus firmus starts on E3, not the tonic of G major. Is the key E minor?"
+                ),
+                (
+                    4,
+                    "The cantus firmus ends on E3, not the tonic of G major. Is the key E minor?"
+                ),
+            ]
+        );
+        out.clear();
+        cf_tonic("E minor".parse().unwrap(), &cf, &mut out);
+        assert!(out.is_empty(), "{out:#?}");
+    }
+
+    #[test]
+    fn minor_6_7_guards_the_tonic_and_the_5th() {
+        let key: Key = "D minor".parse().unwrap();
+        let warned = |s: &str| {
+            let notes: Vec<Pitch> = s.split(' ').map(|p| p.parse().unwrap()).collect();
+            let at: Vec<Position> = (1..=notes.len())
+                .map(|bar| Position { bar, beat: 1 })
+                .collect();
+            let line = Line {
+                voice: Voice::Counterpoint,
+                notes: &notes,
+                at: &at,
+            };
+            let mut out = Vec::new();
+            key_rules(key, &line, &mut out);
+            out.iter()
+                .filter(|v| v.rule == "minor-6-7")
+                .map(|v| v.at.bar)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(warned("Bb4 C5 G4"), Vec::<usize>::new());
+        assert_eq!(warned("C#5 B4 C#5 D5"), Vec::<usize>::new());
+        assert_eq!(warned("C5 D5"), [1]);
+        assert_eq!(warned("C#5 B4 A4"), [2]);
+    }
 
     #[test]
     fn spots_triads() {

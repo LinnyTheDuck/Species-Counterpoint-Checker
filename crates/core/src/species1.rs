@@ -1,7 +1,7 @@
 //! First species: one counterpoint note against each cantus firmus note.
 
 use crate::rules::{self, Line, Placement, Vertical};
-use crate::{InputError, Key, Pitch, Position, Quality, Violation, Voice};
+use crate::{InputError, Key, Pitch, Position, Violation, Voice};
 
 pub struct FirstSpecies {
     pub key: Key,
@@ -68,10 +68,11 @@ impl FirstSpecies {
             .collect();
 
         let mut out = Vec::new();
+        rules::cf_tonic(self.key, &cf_line, &mut out);
         rules::key_rules(self.key, &cf_line, &mut out);
         rules::key_rules(self.key, &cp_melody, &mut out);
         rules::melodic_rules(&cp_melody, &mut out);
-        rules::start_perfect(&verticals[0], self.placement, &mut out);
+        rules::start_perfect(&verticals[0], self.placement, false, &mut out);
         rules::end_perfect(verticals.last().unwrap(), &mut out);
         rules::cadence_step(&cf_line, &cp_line, &mut out);
         for v in &verticals {
@@ -149,11 +150,9 @@ impl FirstSpecies {
 
         let pen = &verticals[last - 1];
         let iv = pen.interval();
-        let (number, quality, expected) = match self.placement {
-            Placement::Above => (6, Quality::Major, "a major 6th"),
-            Placement::Below => (3, Quality::Minor, "a minor 3rd"),
-        };
-        if iv.simple_number() != number || iv.quality() != quality {
+        let cf_leads = self.key.degree(pen.cf) == 7;
+        let (expected_iv, expected) = rules::into_final(self.placement, cf_leads);
+        if (iv.simple_number(), iv.quality()) != expected_iv {
             out.push(Violation::error(
                 "s1-cadence",
                 pen.at,
@@ -369,6 +368,16 @@ mod tests {
             "F3 B2 D3 C3 E3 F3 D3 C3 B2 C3",
         );
         assert!(rules(&below).contains(&"start-perfect"));
+    }
+
+    #[test]
+    fn cadence_follows_the_cantus_leading_note() {
+        // The CF ends 7-1, so the CP above has the 2 and lands on a m3 or m10.
+        let (cf, key) = ("C4 E4 D4 B3 C4", "C major");
+        let ok = check(key, Placement::Above, cf, "C5 C5 B4 D5 C5");
+        assert!(!rules(&ok).contains(&"s1-cadence"), "{ok:#?}");
+        let wrong = check(key, Placement::Above, cf, "C5 C5 B4 G4 C5");
+        assert!(rules(&wrong).contains(&"s1-cadence"), "{wrong:#?}");
     }
 
     #[test]

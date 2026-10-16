@@ -6,6 +6,8 @@ use counterpoint_core as core;
 
 /// Longest line the API accepts, to keep requests cheap.
 const MAX_NOTES: usize = 64;
+/// Most notes a bar may hold; a wrong count under this is reported as `s2-rhythm`.
+const MAX_NOTES_PER_BAR: usize = 4;
 
 pub type CounterpointSchema = Schema<Query, EmptyMutation, EmptySubscription>;
 
@@ -45,6 +47,17 @@ pub struct FirstSpeciesInput {
     /// Bars, counted from 1, whose counterpoint note is tied into the next bar.
     #[graphql(default)]
     ties: Vec<usize>,
+}
+
+/// A second species exercise, with null in the counterpoint for the opening minim rest.
+#[derive(InputObject)]
+pub struct SecondSpeciesInput {
+    /// Key such as "C major" or "F# minor".
+    key: String,
+    placement: Placement,
+    cantus_firmus: Vec<String>,
+    /// One list per bar: two minims, or one semibreve in the last two bars.
+    counterpoint: Vec<Vec<Option<String>>>,
 }
 
 /// A broken rule; `rule` is the id from RULES.md.
@@ -87,15 +100,12 @@ impl Query {
 
     /// Rules first species checks, in display order.
     async fn first_species_rules(&self) -> Vec<Rule> {
-        core::FIRST_SPECIES_RULES
-            .iter()
-            .map(|r| Rule {
-                id: r.id,
-                group: r.group,
-                severity: r.severity.into(),
-                summary: r.summary,
-            })
-            .collect()
+        rules(core::FIRST_SPECIES_RULES)
+    }
+
+    /// Rules second species checks, in display order.
+    async fn second_species_rules(&self) -> Vec<Rule> {
+        rules(core::SECOND_SPECIES_RULES)
     }
 
     /// Checks a first species exercise against the rules in RULES.md.
@@ -108,36 +118,67 @@ impl Query {
             input.counterpoint.join(" "),
             input.ties
         );
-        let result = check(input);
-        match &result {
-            Ok(r) => {
-                for v in &r.violations {
-                    eprintln!("  bar {} {:?} {}: {}", v.bar, v.severity, v.rule, v.message);
-                }
-                eprintln!("  -> valid={}", r.valid);
-            }
-            Err(e) => eprintln!("  -> input error: {}", e.message),
-        }
-        result
+        log_result(check_first(input))
+    }
+
+    /// Checks a second species exercise against the rules in RULES.md.
+    async fn check_second_species(&self, input: SecondSpeciesInput) -> Result<CheckResult> {
+        let bars: Vec<String> = input
+            .counterpoint
+            .iter()
+            .map(|bar| {
+                let notes: Vec<&str> = bar.iter().map(|p| p.as_deref().unwrap_or("rest")).collect();
+                notes.join(" ")
+            })
+            .collect();
+        eprintln!(
+            "checkSecondSpecies key=\"{}\" placement={:?}\n  cf: {}\n  cp: {}",
+            input.key,
+            input.placement,
+            input.cantus_firmus.join(" "),
+            bars.join(" | ")
+        );
+        log_result(check_second(input))
     }
 }
 
-fn check(input: FirstSpeciesInput) -> Result<CheckResult> {
-    let exercise = core::FirstSpecies {
-        key: input
-            .key
-            .parse()
-            .map_err(|e: core::ParseError| Error::new(e.0))?,
-        placement: match input.placement {
-            Placement::Above => core::Placement::Above,
-            Placement::Below => core::Placement::Below,
-        },
-        cantus_firmus: parse_line("cantusFirmus", &input.cantus_firmus)?,
-        counterpoint: parse_line("counterpoint", &input.counterpoint)?,
-        ties: input.ties,
-    };
-    let violations: Vec<Violation> = exercise
-        .check()
+/// Logs the violations or input error for a check, then passes the result on.
+fn log_result(result: Result<CheckResult>) -> Result<CheckResult> {
+    match &result {
+        Ok(r) => {
+            for v in &r.violations {
+                eprintln!(
+                    "  bar {} beat {} {:?} {}: {}",
+                    v.bar, v.beat, v.severity, v.rule, v.message
+                );
+            }
+            eprintln!("  -> valid={}", r.valid);
+        }
+        Err(e) => eprintln!("  -> input error: {}", e.message),
+    }
+    result
+}
+
+fn rules(list: &[core::RuleInfo]) -> Vec<Rule> {
+    list.iter()
+        .map(|r| Rule {
+            id: r.id,
+            group: r.group,
+            severity: r.severity.into(),
+            summary: r.summary,
+        })
+        .collect()
+}
+
+fn parse_key(key: &str) -> Result<core::Key> {
+    key.parse().map_err(|e: core::ParseError| Error::new(e.0))
+}
+
+/// Turns engine output into the API result, or an engine input error into a GraphQL error.
+fn result(
+    violations: std::result::Result<Vec<core::Violation>, core::InputError>,
+) -> Result<CheckResult> {
+    let violations: Vec<Violation> = violations
         .map_err(|e| Error::new(e.0))?
         .into_iter()
         .map(Violation::from)
@@ -146,6 +187,52 @@ fn check(input: FirstSpeciesInput) -> Result<CheckResult> {
         valid: violations.iter().all(|v| v.severity != Severity::Error),
         violations,
     })
+}
+
+fn check_first(input: FirstSpeciesInput) -> Result<CheckResult> {
+    let exercise = core::FirstSpecies {
+        key: parse_key(&input.key)?,
+        placement: input.placement.into(),
+        cantus_firmus: parse_line("cantusFirmus", &input.cantus_firmus)?,
+        counterpoint: parse_line("counterpoint", &input.counterpoint)?,
+        ties: input.ties,
+    };
+    result(exercise.check())
+}
+
+fn check_second(input: SecondSpeciesInput) -> Result<CheckResult> {
+    if input.counterpoint.len() > MAX_NOTES {
+        return Err(Error::new(format!(
+            "counterpoint has more than {MAX_NOTES} bars."
+        )));
+    }
+    let counterpoint = input
+        .counterpoint
+        .iter()
+        .enumerate()
+        .map(|(i, bar)| {
+            if bar.len() > MAX_NOTES_PER_BAR {
+                return Err(Error::new(format!(
+                    "counterpoint[{i}] has more than {MAX_NOTES_PER_BAR} notes."
+                )));
+            }
+            bar.iter()
+                .enumerate()
+                .map(|(j, p)| {
+                    p.as_deref()
+                        .map(|p| parse_pitch(&format!("counterpoint[{i}]"), j, p))
+                        .transpose()
+                })
+                .collect()
+        })
+        .collect::<Result<_>>()?;
+    let exercise = core::SecondSpecies {
+        key: parse_key(&input.key)?,
+        placement: input.placement.into(),
+        cantus_firmus: parse_line("cantusFirmus", &input.cantus_firmus)?,
+        counterpoint,
+    };
+    result(exercise.check())
 }
 
 /// Parses one voice, naming the field and note index on failure.
@@ -158,11 +245,22 @@ fn parse_line(field: &str, notes: &[String]) -> Result<Vec<core::Pitch>> {
     notes
         .iter()
         .enumerate()
-        .map(|(i, s)| {
-            s.parse()
-                .map_err(|e: core::ParseError| Error::new(format!("{field}[{i}]: {}", e.0)))
-        })
+        .map(|(i, s)| parse_pitch(field, i, s))
         .collect()
+}
+
+fn parse_pitch(field: &str, index: usize, s: &str) -> Result<core::Pitch> {
+    s.parse()
+        .map_err(|e: core::ParseError| Error::new(format!("{field}[{index}]: {}", e.0)))
+}
+
+impl From<Placement> for core::Placement {
+    fn from(p: Placement) -> core::Placement {
+        match p {
+            Placement::Above => core::Placement::Above,
+            Placement::Below => core::Placement::Below,
+        }
+    }
 }
 
 impl From<core::Severity> for Severity {
@@ -263,6 +361,59 @@ mod tests {
             res.errors[0]
                 .message
                 .starts_with("cantusFirmus[1]: invalid pitch 'H4'")
+        );
+    }
+
+    #[tokio::test]
+    async fn second_species_assignment_passes() {
+        // The page's second species example, as checker.js sends it.
+        let res = run(r#"{ checkSecondSpecies(input: {
+            key: "D minor", placement: ABOVE,
+            cantusFirmus: ["D3","F3","E3","G3","A3","G3","F3","E3","C#3","D3"],
+            counterpoint: [[null,"F4"],["A4","Bb4"],["C5","G4"],["E4","G4"],["F4","A4"],
+                           ["B4","C#5"],["D5","A4"],["G4","F4"],["E4"],["D4"]]
+        }) { valid violations { rule } } }"#)
+        .await;
+        assert!(res.errors.is_empty(), "{:?}", res.errors);
+        assert_eq!(
+            res.data,
+            value!({ "checkSecondSpecies": { "valid": true, "violations": [] } })
+        );
+    }
+
+    #[tokio::test]
+    async fn second_species_reports_beat() {
+        let res = run(r#"{ checkSecondSpecies(input: {
+            key: "C major", placement: ABOVE,
+            cantusFirmus: ["C4","E4","D4","C4"],
+            counterpoint: [["C5","D5"],["C5","G4"],["A4","B4"],["C5"]]
+        }) { violations { rule bar beat } } }"#)
+        .await;
+        assert!(res.errors.is_empty(), "{:?}", res.errors);
+        let json = res.data.into_json().unwrap();
+        let passing = json["checkSecondSpecies"]["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["rule"] == "s2-passing-dissonance")
+            .expect("s2-passing-dissonance");
+        assert_eq!(
+            (passing["bar"].as_u64(), passing["beat"].as_u64()),
+            (Some(1), Some(2))
+        );
+    }
+
+    #[tokio::test]
+    async fn second_species_bad_pitch_names_the_bar() {
+        let res = run(r#"{ checkSecondSpecies(input: {
+            key: "C major", placement: ABOVE,
+            cantusFirmus: ["C4","C4"], counterpoint: [["C5","H4"],["C5"]]
+        }) { valid } }"#)
+        .await;
+        assert!(
+            res.errors[0]
+                .message
+                .starts_with("counterpoint[0][1]: invalid pitch 'H4'")
         );
     }
 

@@ -8,14 +8,16 @@ mod key;
 mod pitch;
 pub mod rules;
 pub mod species1;
+pub mod species2;
 mod violation;
 
-pub use catalogue::{FIRST_SPECIES_RULES, RuleInfo};
+pub use catalogue::{FIRST_SPECIES_RULES, RuleInfo, SECOND_SPECIES_RULES};
 pub use interval::{Interval, Quality};
 pub use key::{Key, Mode};
 pub use pitch::{Letter, Pitch};
 pub use rules::Placement;
 pub use species1::FirstSpecies;
+pub use species2::SecondSpecies;
 pub use violation::{Position, Severity, Violation, Voice};
 
 /// A pitch or key that could not be parsed.
